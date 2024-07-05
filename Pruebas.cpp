@@ -18,8 +18,10 @@
 using namespace std;
 using namespace cv;
 using namespace cv::ml;
+namespace fs = std::filesystem;
 
-Mat getHOGDescriptors(const Mat& img) {
+Mat getHOGDescriptors(const Mat &img)
+{
     HOGDescriptor hog(
         Size(64, 128), // winSize
         Size(16, 16),  // blockSize
@@ -32,39 +34,48 @@ Mat getHOGDescriptors(const Mat& img) {
     return Mat(descriptors).clone();
 }
 
-int main() {
-    // Cargar el modelo SVM entrenado
+int main(){
     Ptr<SVM> svm = Algorithm::load<SVM>("svm_model.yml");
+    string testing = "/home/andres/Documents/DatasetPropios/LogosDataset/test";
+    vector<string> classes = {"Instagram", "Netflix", "Yahoo", "Youtube"};
+    int windowIndex = 0;
+    Size tamanoImagen(300, 300);
 
-    // Leer la nueva imagen de prueba
-    Mat nuevaImagen = imread("/home/andres/Documents/DatasetPropios/LogosDataset/train/Instagram/c6116757e5dfdc1bf385beb6add47a07.jpg", IMREAD_GRAYSCALE);
-    if (nuevaImagen.empty()) {
-        cerr << "No se pudo cargar la imagen." << endl;
-        return 1;
+    for (int label = 0; label < classes.size(); ++label)
+    {
+        string classPath = testing + "/" + classes[label];
+        for (const auto &entry : fs::directory_iterator(classPath))
+        {
+            Mat img = imread(entry.path().string(), IMREAD_GRAYSCALE);
+            if (img.empty())
+            {
+                cout << "No se pudo cargar la imagen en la ruta: " << entry.path().string() << endl;
+            }
+            Mat imgRedimensionada;
+            Size tamano(64, 128); // Tamaño esperado para el HOG
+            resize(img, imgRedimensionada, tamano, INTER_LINEAR);
+            Mat descriptors = getHOGDescriptors(imgRedimensionada);
+            Mat inputMat(1, descriptors.cols, CV_32F);
+            for (int j = 0; j < descriptors.cols; ++j)
+            {
+                inputMat.at<float>(0, j) = descriptors.at<float>(0, j);
+            }
+
+            float prediccion = svm->predict(inputMat);
+            int clasePredicha = static_cast<int>(prediccion);
+            string clasePredichaStr = classes[clasePredicha];
+            Mat imgColor;
+            cvtColor(img, imgColor, COLOR_GRAY2BGR);
+            resize(imgColor, imgColor, tamanoImagen);
+            putText(imgColor, clasePredichaStr, Point(10, 30), FONT_HERSHEY_SIMPLEX, 1.0, Scalar(0, 255, 0), 2);
+            string windowName = "Imagen Testing " + to_string(windowIndex);
+            imshow(windowName, imgColor);
+            cout << "La imagen en " << entry.path().string() << " es predicha como: " << clasePredichaStr << endl;
+            windowIndex++;
+            waitKey(1);
+        }
     }
-
-    // Preprocesar la imagen (redimensionar y calcular descriptores HOG)
-    Mat imgRedimensionada;
-    Size tamano(64, 128); // Tamaño esperado para el HOG
-    resize(nuevaImagen, imgRedimensionada, tamano, INTER_LINEAR);
-    Mat descriptors = getHOGDescriptors(imgRedimensionada);
-
-    // Preparar datos para la predicción
-    Mat inputMat(1, descriptors.cols, CV_32F);
-    for (int j = 0; j < descriptors.cols; ++j) {
-        inputMat.at<float>(0, j) = descriptors.at<float>(0, j);
-    }
-
-    // Hacer la predicción
-    float prediccion = svm->predict(inputMat);
-
-    // Determinar la clase predicha
-    vector<string> clases = {"Instagram", "Netflix", "Yahoo", "Youtube"};
-    int clasePredicha = static_cast<int>(prediccion);
-    string clasePredichaStr = clases[clasePredicha];
-
-    // Mostrar resultados
-    cout << "La imagen es predicha como: " << clasePredichaStr << endl;
-
+    cout << endl;
+    waitKey(0);
     return 0;
 }
